@@ -3,3 +3,5 @@ try.c:10.00
 try.c:10.00
 try.c:10.00
 pb.c : 1.00
+test.c : 1.00
+test.c : 1.00
