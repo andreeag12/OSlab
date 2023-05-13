@@ -50,19 +50,19 @@ void countCFiles(char* path)
 
 int countLines(char* name)
 {
-    FILE *file = fopen(name, "r");
-    if (file == NULL) 
+    FILE *fp = fopen(name, "r");
+    if (fp == NULL) 
     {
         perror("Failed to open file");
     }
-    int lineCount = 0;
-    char buffer[1024];  // Buffer to store each line
-    while (fgets(buffer, sizeof(buffer), file) != NULL) 
+    int count = 0;
+    char buffer[1024]; 
+    while (fgets(buffer, sizeof(buffer), fp) != NULL) 
     {
-        lineCount++;
+        count++;
     }
-    fclose(file);
-    return lineCount;
+    fclose(fp);
+    return count;
 }
 
 void Score(int errors, int warnings, char* arg) 
@@ -76,31 +76,31 @@ void Score(int errors, int warnings, char* arg)
         score = 2;
     else score = 2 + 8 * (10 - warnings) / 10.0;
 
-    FILE *file = fopen("grades.txt", "a");  // Open the file in append mode
-    if (file == NULL) 
+    FILE *fp = fopen("grades.txt", "a");  
+    if (fp == NULL) 
     {
         perror("Failed to open file\n");
     }
-    fprintf(file, "%s : %.2f\n", arg, score);
-    fclose(file);
+    fprintf(fp, "%s : %.2f\n", arg, score);
+    fclose(fp);
 }
 
 int main(int argc, char* argv[])
 {
     struct stat infos;
-
+    pid_t pid1, pid2;
     if(argc < 2)
     {
         printf("Not enough arguments.\n");
         return -1;
     }
-    else 
+    else
     {
         for(int i = 1; i < argc; i++)
         {
             if(lstat(argv[i], &infos) == 0)
             {
-                pid_t pid1 = fork();
+                pid1 = fork();
                 if(pid1 < 0)
                 {
                     perror("Fork failed.\n");
@@ -146,184 +146,156 @@ int main(int argc, char* argv[])
                         printf("%d is a sym link.\n SymLink menu :\n-n (link name)\n-l (delete link)\n-d (size of link)\n-t (size of target)\n-a (access rights for sym link)\n", i);
                         int c;
                         while((c = getchar()) != '\n')
-                            {
-                                if (c == 'n') {
-                                    printf("Symbolic link name is: %s\n", argv[i]);
-                                } else if (c == 'l') {
-                                    printf("Deleting symbolic link.\n");
-                                    unlink(argv[i]);
-                                    exit(0);
-                                } else if (c == 'd') {
-                                    printf("Size of the symbolic link is: %lld\n", infos.st_size);
-                                } else if (c == 't') {
-                                    struct stat t;
-                                    stat(argv[i], &t);
-                                    printf("Size of the target file is: %lld\n", t.st_size);
-                                } else if (c == 'a') {
-                                    access_rights(argv[i]);
-                                } else {
-                                    printf("'%c' is not a valid option.\n", c);
-                                }
-                            }
-                        } 
-                        //Directory menu
-                        if(S_ISDIR(infos.st_mode) == 1)
                         {
-                            printf("%d is a directory.\n Directory menu :\n-n (dir name)\n-d (size of dir)\n-a (access rights)\n-c (total number of .c files)\n", i);
-                            int c;
-                            while((c = getchar()) != '\n')
-                            {
-                                switch (c)
-                                {
-                                case 'n':   printf("Directory name is: %s\n", argv[i]);
-                                            break;
-                                case 'd':   printf("Size of the directory is: %lld\n",infos.st_size);
-                                            break;
-                                case 'a':   access_rights(argv[i]);
-                                            break;
-                                case 'c':   countCFiles(argv[i]);
-                                            break;
-                                case '-':   break;
-                                default:    printf("'%c' is not a valid option.", c);
-                                            break;
-                                }
+                            if (c == 'n') {
+                                printf("Symbolic link name is: %s\n", argv[i]);
+                            } else if (c == 'l') {
+                                printf("Deleting symbolic link.\n");
+                                unlink(argv[i]);
+                                exit(0);
+                            } else if (c == 'd') {
+                                printf("Size of the symbolic link is: %lld\n", infos.st_size);
+                            } else if (c == 't') {
+                                struct stat t;
+                                stat(argv[i], &t);
+                                printf("Size of the target file is: %lld\n", t.st_size);
+                            } else if (c == 'a') {
+                                access_rights(argv[i]);
+                            } else {
+                                printf("'%c' is not a valid option.\n", c);
                             }
                         }
+                    } 
+                    //Directory menu
+                    if(S_ISDIR(infos.st_mode) == 1)
+                    {
+                        printf("%d is a directory.\n Directory menu :\n-n (dir name)\n-d (size of dir)\n-a (access rights)\n-c (total number of .c files)\n", i);
+                        int c;
+                        while((c = getchar()) != '\n')
+                        {
+                            switch (c)
+                            {
+                            case 'n':   printf("Directory name is: %s\n", argv[i]);
+                                            break;
+                            case 'd':   printf("Size of the directory is: %lld\n",infos.st_size);
+                                            break;
+                            case 'a':   access_rights(argv[i]);
+                                            break;
+                            case 'c':   countCFiles(argv[i]);
+                                            break;
+                            case '-':   break;
+                            default:    printf("'%c' is not a valid option.", c);
+                                            break;
+                            }
+                        }
+                    }
                 }
-                else if(pid1 > 0)
+                else 
                 {
-                    pid_t status = waitpid(pid1, &status, 0);
+                    int pfd[2]; //0 read descriptor, 1 write descriptor
+                    int newfd;
+                    if(pipe(pfd) < 0)
+                    {
+                        perror("Pipe cannot be created\n");
+                        exit(-1);
+                    }
+                    //test to see if it its regular file
+                    pid2 = fork();
+                    if(pid2 < 0)
+                    {
+                        perror("Fork process for second child failed.\n");
+                        exit(1);
+                    }
+                    else if(pid2 == 0)
+                    {
+                        //the child process reads the output of script
+                        close(pfd[0]);  //read descriptor closed
+                        if((newfd = dup2(pfd[1], 1)) < 0)
+                        {
+                            perror("Can not duplicate\n");
+                            exit(1);
+                        }
+                        if(S_ISREG(infos.st_mode)==1 && strstr(argv[i],".c"))
+                        {
+                            if(S_ISREG(infos.st_mode)==1)
+                            {
+                                execlp("bash", "bash", "compile.sh", argv[i], NULL);
+                            } 
+                        }
+                        else if(S_ISREG(infos.st_mode)==1)
+                        {
+                            int countLine = countLines(argv[i]);
+                            printf("The number of lines is: %d\n", countLine);
+                        } 
+                        else if(S_ISDIR(infos.st_mode)==1)
+                        {
+                            //create text file
+                            char file[strlen(argv[i]) + 11];
+                            if(strrchr(argv[i], '/') != 0) 
+                            {
+                                char* dir_name = strrchr(argv[i], '/') + 1;
+                                sprintf(file, "%s/%s_file.txt", argv[i], dir_name);
+                            } 
+                            else 
+                            {
+                                strcpy(file, argv[i]);
+                                strcat(file, "/");
+                                strcat(file, argv[i]);
+                                strcat(file, "_file.txt");
+                            }
+                            FILE* fp = fopen(file, "w");
+                            if(fp == NULL) 
+                            {
+                                perror("open");
+                                exit(EXIT_FAILURE);
+                            }
+                            fclose(fp);
+                            exit(EXIT_SUCCESS);
+                        }
+                        else if(S_ISLNK(infos.st_mode) == 1)
+                        {
+                            printf("Changing permissions for symbolic link %s\n", argv[i]);
+                            if (execlp("chmod", "chmod", "u=rwx,g=rw,o=---", argv[i], NULL) == -1) 
+                            {
+                                 perror("Failed to execute chmod command\n");
+                            }
+                        }
+                        close(pfd[1]);
+                        exit(1);
+                    }
+                    //the parent reads the output of the string
+                    //close the writing end of pipe
+                    close(pfd[1]); 
+                    if(S_ISREG(infos.st_mode)==1 && strstr(argv[i],".c"))
+                    {
+                        FILE* file = fdopen(pfd[0],"r");
+                        char string[100];
+                        fscanf(file, "%s", string);
+                        int errors = atoi(string);
+                        fscanf(file, "%s", string);
+                        int warnings = atoi(string);
+                        Score(errors, warnings, argv[i]);
+                    }
+                    close(pfd[0]);
+                    pid_t status = waitpid(pid2, &status, 0);
                     if(WIFEXITED(status))
                     {
                         int exitCode = WEXITSTATUS(status);
                         printf("The process with PID %d has ended with the exit code %d\n", status, exitCode);
+
                     }
                     else
                     {
                         printf("The process with PID %d has terminated abnormally\n", status);
                     }
-
-                    pid_t child2 = fork();
-                    if(child2 < 0)
-                    {
-                        perror("Fork process for second child failed.\n");
-                        exit(1);
-                    }
-                    else if(child2 == 0)
-                    {
-                        if((strstr(argv[i], ".c") != NULL))
-                        {
-                            int pfd[2]; //0 read descriptor, 1 write descriptor
-                            int newfd;
-                            if(pipe(pfd) < 0)
-                            {
-                                perror("Pipe not created\n");
-                                exit(-1);
-                            }
-
-                            int pid2 = fork();
-                            if(pid2 < 0)
-                            {
-                                perror("Can't create second process\n");
-                                exit(-1);
-                            }
-                            else if(pid2 == 0)
-                            {
-                                //child process reads the output of the script
-                                close(pfd[0]);  //close read descriptor
-                                if((newfd = dup2(pfd[1], 1)) < 0)
-                                {
-                                    perror("Can not duplicate\n");
-                                    exit(1);
-                                }
-                                if(S_ISREG(infos.st_mode)==1 && strstr(argv[i],".c"))
-                                {
-                                    if(S_ISREG(infos.st_mode)==1)
-                                    {
-                                        execlp("bash", "bash", "compile.sh", argv[i], NULL);
-                                    } 
-                                    else if(S_ISREG(infos.st_mode)==1)
-                                    {
-                                        int lineCount = countLines(argv[i]);
-                                        printf("The number of lines is: %d\n", lineCount);
-                                    } 
-                                    else if(S_ISDIR(infos.st_mode)==1)
-                                    {
-                                        if (execlp("chmod", "chmod", "u=rwx,g=rw,o=---", argv[i], NULL) == -1) 
-                                        {
-                                            perror("Failed to execute chmod command\n");
-                                        }
-                                    }
-                                }
-                                close(pfd[1]);
-                                exit(1);
-                            }
-                            //parent reads the output of the string
-                            close(pfd[1]); //close the writing end of pipe
-
-                            FILE* file = fdopen(pfd[0],"r");
-                            char string[100];
-                            fscanf(file, "%s", string);
-                            int errors = atoi(string);
-                            fscanf(file, "%s", string);
-                            int warnings = atoi(string);
-                            Score(errors, warnings, argv[i]);
-                            close(pfd[0]);
-                        }
-                        if(S_ISLNK(infos.st_mode) != 0)
-                        {
-                            printf("Changing permissions for symbolic link %s\n", argv[i]);
-                            execlp("chmod", "chmod", "-h", "u=rwx,g=rw,o=", argv[i], NULL);
-                            perror("execlp");
-                            exit(1);
-                        }
-                        if(S_ISDIR(infos.st_mode) != 0) 
-                        {
-                            char file_name[strlen(argv[i]) + 11];
-                            if(strrchr(argv[i], '/') != 0) 
-                            {
-                                char* dir_name = strrchr(argv[i], '/') + 1;
-                                sprintf(file_name, "%s/%s_file.txt", argv[i], dir_name);
-                            } 
-                            else 
-                            {
-                                strcpy(file_name, argv[i]);
-                                strcat(file_name, "/");
-                                strcat(file_name, argv[i]);
-                                strcat(file_name, "_file.txt");
-                            }
-                            int fp = open(file_name, O_WRONLY | O_CREAT, 0644);
-                            if(fp == -1) 
-                            {
-                                perror("open");
-                                exit(EXIT_FAILURE);
-                            }
-                            close(fp);
-                            exit(EXIT_SUCCESS);
-                        }
-                    }
-                    else
-                    {
-                        pid_t status = waitpid(child2, &status, 0);
-                        if(WIFEXITED(status))
-                        {
-                            int exitCode = WEXITSTATUS(status);
-                            printf("The process with PID %d has ended with the exit code %d\n", status, exitCode);
-
-                        }
-                        else
-                        {
-                            printf("The process with PID %d has terminated abnormally\n", status);
-                        }
-                    }
-                }
-                else
-                {
-                    perror("Menu error.\n");
-                    exit(-1);
                 }
             }
+        else
+        {
+            perror("Menu error.\n");
+            exit(-1);
         }
+    }
     }
     return 0;
 }
